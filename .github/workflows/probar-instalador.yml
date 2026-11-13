@@ -1,0 +1,73 @@
+# Prueba los dos instaladores en una Mac y una PC de GitHub, con la versión publicada: instala, comprueba la app y el
+# acceso directo, guarda "datos del usuario" y vuelve a instalar (actualizar) para ver que no los toca.
+# Corre sola con cada versión nueva publicada, y a mano desde la pestaña Actions.
+name: Probar el instalador
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      KADS_NO_ABRIR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar
+        run: bash instalar-mac.sh
+      - name: Comprobar
+        run: |
+          D="$HOME/Anuncios con IA"
+          test -f "$D/VERSION" && test -x "$D/Abrir Anuncios con IA.command"
+          test -x "$HOME/Applications/Kads Studio.app/Contents/MacOS/kads-studio"
+          test -f "$HOME/Applications/Kads Studio.app/Contents/Resources/kads.icns"
+          plutil -lint "$HOME/Applications/Kads Studio.app/Contents/Info.plist"
+          echo "KIE_API_KEY=prueba" > "$D/.env"; mkdir -p "$D/temp/mio"; echo mio > "$D/temp/mio/x.json"; echo "- regla" > "$D/mis_archivos/preferencias.md"
+          echo 2000-01-01 > "$D/VERSION"
+      - name: Actualizar
+        run: bash instalar-mac.sh
+      - name: Lo del usuario sigue igual
+        run: |
+          D="$HOME/Anuncios con IA"
+          grep -q prueba "$D/.env" && grep -q mio "$D/temp/mio/x.json" && grep -q regla "$D/mis_archivos/preferencias.md"
+          test "$(cat "$D/VERSION")" != "2000-01-01"
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      KADS_NO_ABRIR: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar (como lo pega la persona, con Windows PowerShell)
+        shell: powershell
+        run: Get-Content -Raw -Encoding UTF8 instalar-windows.ps1 | Invoke-Expression
+      - name: Comprobar
+        shell: powershell
+        run: |
+          $D = Join-Path $env:USERPROFILE 'Anuncios con IA'
+          if (-not (Test-Path (Join-Path $D 'VERSION'))) { throw 'falta la app' }
+          if (-not (Test-Path (Join-Path $D 'Abrir Anuncios con IA.bat'))) { throw 'falta el lanzador' }
+          if (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('Programs')) 'Kads Studio.lnk'))) { throw 'falta el acceso del menú Inicio' }
+          if (-not (Test-Path (Join-Path $D 'app\kads-studio.ico'))) { throw 'falta el ícono' }
+          Set-Content (Join-Path $D '.env') 'KIE_API_KEY=prueba'
+          New-Item -ItemType Directory (Join-Path $D 'temp\mio') -Force | Out-Null; Set-Content (Join-Path $D 'temp\mio\x.json') 'mio'
+          Set-Content (Join-Path $D 'mis_archivos\preferencias.md') '- regla'
+          Set-Content (Join-Path $D 'VERSION') '2000-01-01'
+      - name: Actualizar
+        shell: powershell
+        run: Get-Content -Raw -Encoding UTF8 instalar-windows.ps1 | Invoke-Expression
+      - name: Lo del usuario sigue igual
+        shell: powershell
+        run: |
+          $D = Join-Path $env:USERPROFILE 'Anuncios con IA'
+          if (-not (Select-String -Quiet 'prueba' (Join-Path $D '.env'))) { throw 'se tocó el .env' }
+          if (-not (Select-String -Quiet 'mio' (Join-Path $D 'temp\mio\x.json'))) { throw 'se tocó temp' }
+          if (-not (Select-String -Quiet 'regla' (Join-Path $D 'mis_archivos\preferencias.md'))) { throw 'se tocaron las preferencias' }
+          if ((Get-Content (Join-Path $D 'VERSION') -Raw).Trim() -eq '2000-01-01') { throw 'no se actualizó' }
