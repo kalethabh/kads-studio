@@ -89,6 +89,7 @@ cat > "${APLICACION}/Contents/Info.plist" <<PLIST
   <key>CFBundleExecutable</key><string>kads-studio</string>
   <key>CFBundleIconFile</key><string>kads</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>LSArchitecturePriority</key><array><string>arm64</string><string>x86_64</string></array>
 </dict>
 </plist>
 PLIST
@@ -113,5 +114,8 @@ echo "   · Para actualizar más adelante, vuelve a pegar este mismo comando."
 echo
 if [ -z "$KADS_NO_ABRIR" ]; then
   echo " Abriendo Kads Studio... La primera vez instala lo que falte (puede tardar de 10 a 30 minutos)."
-  open "${APLICACION}"
+  # El lanzador directo en la Terminal (se ve cómo avanza la primera instalación). En algunas Mac con chip Apple y sin
+  # Rosetta, macOS no abre la aplicación recién creada (error -10669): el lanzador no depende de eso y la deja bien.
+  open -a Terminal "${DESTINO}/${LANZADOR}" 2>/dev/null || open "${DESTINO}/${LANZADOR}" 2>/dev/null || open "${APLICACION}" \
+    || echo " No pude abrirla sola: abre «${LANZADOR}» con doble clic en «${DESTINO}»."
 fi
