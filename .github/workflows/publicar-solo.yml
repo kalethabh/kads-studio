@@ -1,0 +1,125 @@
+# Publica SOLA la versión nueva de Kads Studio.
+#
+# Cada 10 minutos mira el repositorio privado de la app (kalethabh/App-nube, rama main). Si desde la última versión
+# publicada cambió algo de la app (no cuentan los guardados automáticos de anuncios ni las preferencias), arma el
+# paquete limpio (el mismo de «npm run paquete»), lo publica aquí como versión nueva y pone al día los instaladores.
+# Quien instaló la app con el comando la recibe con el botón «Actualizar».
+#
+# Lee la app con una llave de solo lectura (secreto APP_NUBE_LLAVE). La versión es la fecha de Colombia, con una letra
+# si ya hubo otra ese día (2026-11-15, 2026-11-15a, 2026-11-15b…). ULTIMA.json recuerda hasta dónde se publicó.
+name: Publicar sola la versión nueva
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar-solo
+  cancel-in-progress: false
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GH_TOKEN: ${{ github.token }}
+      APP: git@github.com:kalethabh/App-nube.git
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: La llave de solo lectura
+        env:
+          LLAVE: ${{ secrets.APP_NUBE_LLAVE }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$LLAVE" > ~/.ssh/app-nube
+          chmod 600 ~/.ssh/app-nube
+          ssh-keyscan -t ed25519,rsa github.com >> ~/.ssh/known_hosts 2>/dev/null
+          echo "GIT_SSH_COMMAND=ssh -i $HOME/.ssh/app-nube -o IdentitiesOnly=yes" >> "$GITHUB_ENV"
+
+      - name: ¿Cambió la app desde la última versión?
+        id: mirar
+        run: |
+          NUEVO=$(git ls-remote "$APP" refs/heads/main | cut -f1)
+          [ -n "$NUEVO" ] || { echo "No pude leer el repositorio de la app."; exit 1; }
+          VIEJO=$(jq -r '.commit // empty' ULTIMA.json 2>/dev/null || true)
+          echo "nuevo=$NUEVO" >> "$GITHUB_OUTPUT"
+          if [ "$NUEVO" = "$VIEJO" ]; then echo "Nada nuevo."; echo "publicar=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          git clone --quiet --filter=blob:none --no-checkout "$APP" "$RUNNER_TEMP/app"
+          cd "$RUNNER_TEMP/app"
+          FUERA=(':!temp' ':!mis_archivos' ':!output' ':!respaldos' ':!.github' ':!CONTEXTO-PROYECTO.md' ':!VERSION' ':!CAMBIOS.md')
+          if [ -n "$VIEJO" ] && git cat-file -e "$VIEJO^{commit}" 2>/dev/null; then
+            CAMBIOS=$(git diff --name-only "$VIEJO" "$NUEVO" -- . "${FUERA[@]}" | head -200)
+            git log --no-merges --format='%s' "$VIEJO..$NUEVO" -- . "${FUERA[@]}" | grep -v '^Guardado automático' | head -30 > "$RUNNER_TEMP/titulos.txt" || true
+          else
+            CAMBIOS="(primera publicación automática)"
+            : > "$RUNNER_TEMP/titulos.txt"
+          fi
+          if [ -z "$CAMBIOS" ]; then echo "Solo cambiaron anuncios o preferencias: no se publica."; echo "publicar=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "Cambió:"; echo "$CAMBIOS" | head -40
+          echo "publicar=si" >> "$GITHUB_OUTPUT"
+
+      - name: La versión que toca
+        id: version
+        if: steps.mirar.outputs.publicar == 'si'
+        run: |
+          HOY=$(TZ=America/Bogota date +%F)
+          ULTIMA=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 --json tagName --jq '.[].tagName' | sed -n 's/^v\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}[a-z]\{0,1\}\)$/\1/p' | sort | tail -1)
+          V="$HOY"
+          if [ -n "$ULTIMA" ] && [ ! "$V" \> "$ULTIMA" ]; then
+            BASE=${ULTIMA:0:10}; LETRA=${ULTIMA:10:1}
+            if [ -z "$LETRA" ]; then V="${BASE}a"
+            elif [ "$LETRA" = "z" ]; then echo "Ya hubo 27 versiones con fecha $BASE: se publica mañana."; echo "v=" >> "$GITHUB_OUTPUT"; exit 0
+            else V="${BASE}$(printf "\\$(printf '%03o' $(( $(printf '%d' "'$LETRA") + 1 )))")"; fi
+          fi
+          echo "Versión: $V (la última era ${ULTIMA:-ninguna})"
+          echo "v=$V" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.v != ''
+        with:
+          node-version: 22
+
+      - name: Armar el paquete
+        if: steps.version.outputs.v != ''
+        run: |
+          cd "$RUNNER_TEMP/app"
+          git sparse-checkout set --no-cone '/*' '!/temp/' '!/mis_archivos/' '!/output/' '!/respaldos/'
+          git checkout --quiet "${{ steps.mirar.outputs.nuevo }}"
+          printf '%s\n' "${{ steps.version.outputs.v }}" > VERSION
+          node app/herramientas/paquete-compartir.mjs "$RUNNER_TEMP/anuncios-con-ia-app.zip"
+          {
+            echo "## ${{ steps.version.outputs.v }}"
+            echo
+            if [ -s "$RUNNER_TEMP/titulos.txt" ]; then sed 's/^/- /' "$RUNNER_TEMP/titulos.txt"; else echo "- Mejoras de la app."; fi
+            echo
+            echo "Para actualizar, toca «Actualizar» en la app. Para instalarla, mira el README: un comando en Mac o en Windows."
+          } > "$RUNNER_TEMP/notas.md"
+          cat "$RUNNER_TEMP/notas.md"
+
+      - name: Publicar la versión
+        if: steps.version.outputs.v != ''
+        run: |
+          V="${{ steps.version.outputs.v }}"
+          gh release create "v$V" "$RUNNER_TEMP/anuncios-con-ia-app.zip" --repo "$GITHUB_REPOSITORY" --title "Kads Studio $V" --notes-file "$RUNNER_TEMP/notas.md" --latest
+
+      - name: Instaladores al día y hasta dónde se publicó
+        if: steps.version.outputs.v != ''
+        run: |
+          for f in README.md instalar-mac.sh instalar-windows.ps1; do
+            [ -s "$RUNNER_TEMP/app/instalar/$f" ] && cp "$RUNNER_TEMP/app/instalar/$f" "$f"
+          done
+          jq -n --arg v "${{ steps.version.outputs.v }}" --arg c "${{ steps.mirar.outputs.nuevo }}" --arg f "$(date -u +%FT%TZ)" '{version: $v, commit: $c, fecha: $f}' > ULTIMA.json
+          git config user.name "Kads Studio"
+          git config user.email "kads-studio@users.noreply.github.com"
+          git add README.md instalar-mac.sh instalar-windows.ps1 ULTIMA.json
+          git commit --quiet -m "Versión ${{ steps.version.outputs.v }} publicada" || exit 0
+          git push --quiet
+
+      - name: Recordar lo revisado aunque no se publique
+        if: steps.mirar.outputs.publicar == 'no' && steps.mirar.outputs.nuevo != ''
+        run: echo "Sin publicar."
