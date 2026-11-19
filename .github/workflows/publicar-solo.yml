@@ -55,7 +55,7 @@ jobs:
           if [ "$NUEVO" = "$VIEJO" ]; then echo "Nada nuevo."; echo "publicar=no" >> "$GITHUB_OUTPUT"; exit 0; fi
           git clone --quiet --filter=blob:none --no-checkout "$APP" "$RUNNER_TEMP/app"
           cd "$RUNNER_TEMP/app"
-          FUERA=(':!temp' ':!mis_archivos' ':!output' ':!respaldos' ':!.github' ':!CONTEXTO-PROYECTO.md' ':!VERSION' ':!CAMBIOS.md')
+          FUERA=(':!temp' ':!mis_archivos' ':!output' ':!respaldos' ':!.github' ':!instalar/.github' ':!CONTEXTO-PROYECTO.md' ':!VERSION' ':!CAMBIOS.md')
           if [ -n "$VIEJO" ] && git cat-file -e "$VIEJO^{commit}" 2>/dev/null; then
             CAMBIOS=$(git diff --name-only "$VIEJO" "$NUEVO" -- . "${FUERA[@]}" | head -200)
             git log --no-merges --format='%s' "$VIEJO..$NUEVO" -- . "${FUERA[@]}" | grep -v '^Guardado automático' | head -30 > "$RUNNER_TEMP/titulos.txt" || true
