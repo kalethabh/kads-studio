@@ -1,2 +1,2 @@
 Subir un cambio a este archivo publica la versión nueva de Kads Studio sin esperar el horario (publicar-solo.yml).
-2026-11-21T16:29:58Z
+2026-11-21T17:59:31Z
