@@ -35,7 +35,9 @@ NUEVA="$TMP/x/Anuncios con IA"
 VERSION_NUEVA="$(tr -d '[:space:]' < "$NUEVA/VERSION")"
 
 # 3. Instalar o actualizar
+ACTUALIZA=""
 if [ -f "${DESTINO}/VERSION" ]; then
+  ACTUALIZA=1
   echo " 3/4  Ya estaba instalada (versión $(tr -d '[:space:]' < "${DESTINO}/VERSION")): actualizando a la ${VERSION_NUEVA} sin tocar lo tuyo..."
   # Si la app está abierta, se cierra (se vuelve a abrir al final)
   lsof -ti tcp:4455 -sTCP:LISTEN 2>/dev/null | xargs kill 2>/dev/null; sleep 1
@@ -62,6 +64,12 @@ xattr -dr com.apple.quarantine "${DESTINO}" 2>/dev/null
 
 # 4. La aplicación «Kads Studio» (con su ícono), en Aplicaciones de tu carpeta de usuario
 echo " 4/4  Creando la aplicación «Kads Studio»..."
+# (2026-11-25e) La que abre SIN ventana de Terminal (app/inicio/crear-app-mac.sh: arranca por detrás, abre el navegador
+# y se cierra con Cmd+Q o en el Dock › Salir). Solo si no se puede, la de antes, que abre la Terminal.
+SIN_TERMINAL=""
+if [ -z "${KADS_APLICACION:-}" ] && [ -f "${DESTINO}/app/inicio/crear-app-mac.sh" ] && bash "${DESTINO}/app/inicio/crear-app-mac.sh" >/dev/null 2>&1; then
+  SIN_TERMINAL=1
+else
 rm -rf "${APLICACION}"
 mkdir -p "${APLICACION}/Contents/MacOS" "${APLICACION}/Contents/Resources"
 cat > "${APLICACION}/Contents/MacOS/kads-studio" <<APP
@@ -104,6 +112,7 @@ if [ -f "$ICONO" ]; then
 fi
 touch "${APLICACION}"
 # Que el Finder y el Launchpad la vean ya
+fi
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${APLICACION}" >/dev/null 2>&1
 
 echo
@@ -112,7 +121,9 @@ echo "   · La app: «Kads Studio» en Aplicaciones (Finder → Ir → Inicio �
 echo "   · Tus anuncios y la app: «${DESTINO}»."
 echo "   · Para actualizar más adelante, vuelve a pegar este mismo comando."
 echo
-if [ -z "$KADS_NO_ABRIR" ]; then
+if [ -z "$KADS_NO_ABRIR" ] && [ -n "$ACTUALIZA" ] && [ -n "$SIN_TERMINAL" ] && open "${APLICACION}" 2>/dev/null; then
+  echo " Abriendo Kads Studio (sin ventana de Terminal: para cerrarla, Cmd+Q o clic derecho en su ícono del Dock › Salir)."
+elif [ -z "$KADS_NO_ABRIR" ]; then
   echo " Abriendo Kads Studio... La primera vez instala lo que falte (puede tardar de 10 a 30 minutos)."
   # El lanzador directo en la Terminal (se ve cómo avanza la primera instalación). En algunas Mac con chip Apple y sin
   # Rosetta, macOS no abre la aplicación recién creada (error -10669): el lanzador no depende de eso y la deja bien.
