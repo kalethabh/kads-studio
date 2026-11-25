@@ -25,9 +25,12 @@ jobs:
         run: |
           D="$HOME/Anuncios con IA"
           test -f "$D/VERSION" && test -x "$D/Abrir Anuncios con IA.command"
-          test -x "$HOME/Applications/Kads Studio.app/Contents/MacOS/kads-studio"
-          test -f "$HOME/Applications/Kads Studio.app/Contents/Resources/kads.icns"
-          plutil -lint "$HOME/Applications/Kads Studio.app/Contents/Info.plist"
+          # (2026-11-25e) la app que abre SIN Terminal (app/inicio/crear-app-mac.sh: un applet de AppleScript)
+          A="$HOME/Applications/Kads Studio.app"
+          test -x "$A/Contents/MacOS/applet" && test -f "$A/Contents/Resources/applet.icns"
+          test "$(cat "$A/Contents/Resources/raiz.txt")" = "$D"
+          plutil -lint "$A/Contents/Info.plist"
+          ! grep -rq "open -a Terminal" "$A/Contents/MacOS"
           echo "KIE_API_KEY=prueba" > "$D/.env"; mkdir -p "$D/temp/mio"; echo mio > "$D/temp/mio/x.json"; echo "- regla" > "$D/mis_archivos/preferencias.md"
           echo 2000-01-01 > "$D/VERSION"
       - name: Actualizar
@@ -37,6 +40,7 @@ jobs:
           D="$HOME/Anuncios con IA"
           grep -q prueba "$D/.env" && grep -q mio "$D/temp/mio/x.json" && grep -q regla "$D/mis_archivos/preferencias.md"
           test "$(cat "$D/VERSION")" != "2000-01-01"
+          test -x "$HOME/Applications/Kads Studio.app/Contents/MacOS/applet"
 
   windows:
     runs-on: windows-latest
